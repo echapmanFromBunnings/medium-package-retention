@@ -1,14 +1,15 @@
 name: 'Delete old artifacts by policy'
 on:
   workflow_dispatch:
-    reposFile:
-      description: "Relative path to .github/workflows/config for JSON file of repos to onboard"
-      required: true
-      default: "repositories.json"
-    runtimeToken:
-      description: "token to use to run job manually"
-      required: true
-      default: "NAH-AHHH"
+    inputs:
+      reposFile:
+        description: "Relative path to .github/workflows/config for JSON file of repos to onboard"
+        required: true
+        default: "repositories.json"
+      runtimeToken:
+        description: "token to use to run job manually"
+        required: true
+        default: "NAH-AHHH"
         
 jobs:
   read-json:
