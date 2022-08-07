@@ -1,0 +1,14 @@
+[
+    {
+        "owner" : "echapmanFromBunnings",
+        "repo": "medium-repo-runner",
+        "target": "_tmp",
+        "expiredAfterMs": 432000000,
+        "exclude": "binaries"
+    },
+    {
+        "owner" : "echapmanFromBunnings",
+        "repo": "medium-oidc",
+        "expiredAfterMs": 432000000
+    }
+]
