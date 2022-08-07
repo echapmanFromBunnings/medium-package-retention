@@ -1,0 +1,99 @@
+name: 'Delete old artifacts by policy'
+on:
+  workflow_dispatch:
+    reposFile:
+      description: "Relative path to .github/workflows/config for JSON file of repos to onboard"
+      required: true
+      default: "repositories.json"
+    runtimeToken:
+      description: "token to use to run job manually"
+      required: true
+      default: "NAH-AHHH"
+        
+jobs:
+  read-json:
+    runs-on: [ubuntu-latest]
+    outputs:
+      repojson: ${{ steps.set-repo-json.outputs.repojson }}
+    steps:
+      - uses: actions/checkout@v3
+      - id: set-repo-json
+        env:
+          JSONFILEPATH: .github/workflows/config/${{ github.event.inputs.reposFile }}
+        run: |
+          if [[ ! -f "$JSONFILEPATH" ]]; then
+              echo "Cannot find specified repo json file '$JSONFILEPATH'" >&2
+              exit 1
+          fi
+          JSON=$(cat $JSONFILEPATH)
+          JSON="${JSON//'%'/'%25'}"
+          JSON="${JSON//$'\n'/'%0A'}"
+          JSON="${JSON//$'\r'/'%0D'}"
+          echo "::set-output name=repojson::$JSON"
+  delete-artifact:
+    runs-on: [ubuntu-latest]
+    needs: [read-json]
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.read-json.outputs.repojson) }}
+      max-parallel: 2
+      fail-fast: false
+    steps:
+      - name: Add cleanup artifacts
+        uses: actions/github-script@v6
+        id: arti
+        env:
+          OWNER: ${{ matrix.owner }}
+          REPO: ${{ matrix.repo }}
+          EXPIRE_IN: ${{ matrix.expiredAfterMs }}
+          EXCLUDE_PREFIX: ${{ matrix.exclude }}
+          ONLY_PREFIX: ${{ matrix.target }}
+        with:
+          github-token: ${{ github.event.inputs.runtimeToken }}
+          debug: true
+          script: |
+            const { data: artifacts } = await github.rest.actions.listArtifactsForRepo({
+                owner: process.env.OWNER,
+                repo: process.env.REPO
+            });
+            const deletedArtifacts = []
+            
+            function differenceInMilliseconds( date1, date2 ) {
+              // Convert both dates to milliseconds
+              var date1_ms = date1.getTime();
+              var date2_ms = date2.getTime();
+
+              // Calculate the difference in milliseconds
+              var difference_ms = date1_ms - date2_ms; 
+              return difference_ms;
+            }
+            
+            function shouldDelete(artifactName, artifactCreateDate){
+              const expireInMs = process.env.EXPIRE_IN
+              const onlyPrefix = process.env.ONLY_PREFIX
+              const exceptPrefix = process.env.EXCLUDE_PREFIX
+              
+              const included = onlyPrefix === '' || artifactName.startsWith(onlyPrefix)
+              const excluded = exceptPrefix && artifactName.startsWith(exceptPrefix)
+              console.log(`difference found: ${differenceInMilliseconds(new Date(), new Date(artifactCreateDate))}`)
+              const expired =
+                differenceInMilliseconds(new Date(), new Date(artifactCreateDate)) >=
+                expireInMs
+
+              return included && !excluded && expired
+            }
+            
+            for (const artifact of artifacts.artifacts) {
+              if (shouldDelete(artifact.name, artifact.created_at)) {
+                deletedArtifacts.push(artifact)
+                core.debug(`Deleting artifact:\n${JSON.stringify(artifact, null, 2)}`)
+                await github.rest.actions.deleteArtifact({
+                  owner: process.env.OWNER,
+                  repo: process.env.REPO,
+                  // eslint-disable-next-line @typescript-eslint/camelcase
+                  artifact_id: artifact.id
+                })
+              }
+            }
+            
+            core.setOutput('deleted-artifacts', JSON.stringify(deletedArtifacts))
